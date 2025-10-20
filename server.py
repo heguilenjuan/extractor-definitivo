@@ -13,22 +13,26 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+class Vendor(str):
+    GUERRINI = "GUERRINI"
+    PIRELLI = "PIRELLI"
+
 @app.get("/health")
 async def health(): return {"status": "ok"}
 
 @app.post("/extract")
-async def extract_invoice(file: UploadFile = File(...), vendor_hint: str | None = Form(default=None)):
+async def extract_invoice(
+    file: UploadFile = File(...),
+    vendor: Vendor = Form(...)
+):
     
     filename = (file.filename or "").lower()
-    
     if not filename.endswith(".pdf"):
         raise HTTPException(
             status_code=400, detail="Solo se aceptan archivos PDF por el momento.")
         
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        
         content = await file.read()
-        
         if not content:
             raise HTTPException(status_code=400, detail="Archivo vacío.")
         
@@ -36,8 +40,7 @@ async def extract_invoice(file: UploadFile = File(...), vendor_hint: str | None 
         tmp.flush()
         tmp_path = tmp.name
     try:
-        result = extract_from_pdf(
-            tmp_path, vendor_hint=vendor_hint, cfg_path="vendors.yaml")
+        result = extract_from_pdf(tmp_path, vendor_hint=vendor.value, cfg_path="vendors.yaml")
         return result
     finally:
         try:

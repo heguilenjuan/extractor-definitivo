@@ -70,33 +70,54 @@ def _validate_and_repair(out: Dict[str, Any], tol: float = 0.05) -> None:
     elif abs((tot or 0.0) - comp) > tol:
         out["warnings"].append(f"Diferencia contable: total({tot}) != subtotal+iva+percepciones({comp})")
 def extract_from_pdf(pdf_path: str, vendor_hint: Optional[str] = None, cfg_path: str = "vendors.yaml") -> Dict[str, Any]:
+    
     lines = read_pdf_text(pdf_path)
     used_ocr = False
+    
     if not lines or sum(len(l) for l in lines) < 30:
         lines = ocr_pdf_to_lines(pdf_path); used_ocr = True
+        
     header = extract_header_common(lines)
     cfg = _load_vendor_config(cfg_path)
     name_keywords = cfg["detect"]["names"]; cuit_map = cfg["detect"]["cuits"]
     vendor = (vendor_hint or "").upper() or detect_vendor_basic(lines, name_keywords) or None
     proveedor, cuit_prov, cliente, cuit_cli = (None, None, None, None)
+    
     from extractor_utils import extract_names_and_cuits
+    
     proveedor, cuit_prov, cliente, cuit_cli = extract_names_and_cuits(lines, vendor)
+    
     if not vendor and cuit_prov:
         vendor = detect_vendor_by_cuit(cuit_prov, cuit_map)
+        
     out: Dict[str, Any] = {
-        "proveedor": proveedor, "cuit_proveedor": cuit_prov,
-        "cliente": cliente, "cuit_cliente": cuit_cli,
-        "tipo": header["tipo"], "numero": header["numero"],
-        "fecha": header["fecha"], "cae": header["cae"], "cae_vto": header["cae_vto"],
-        "subtotal": None, "iva": None, "iva_detalle": [],
-        "percepciones_total": None, "percepciones_detalle": [],
+        "proveedor": proveedor, 
+        "cuit_proveedor": cuit_prov,
+        "cliente": cliente,
+        "cuit_cliente": cuit_cli,
+        "tipo": header["tipo"], 
+        "numero": header["numero"],
+        "fecha": header["fecha"], 
+        "cae": header["cae"], 
+        "cae_vto": header["cae_vto"],
+        "subtotal": None, 
+        "iva": None, 
+        "iva_detalle": [],
+        "percepciones_total": None, 
+        "percepciones_detalle": [],
         "total": None,
         "debug": {"vendor": vendor or "UNKNOWN", "lines_count": len(lines)}
     }
+    
     handler = REGISTRY.get((vendor or "").upper())
-    if handler: handler(lines, out)
-    else: _fallback_labels(lines, out)
-    _validate_and_repair(out)
+    
+    if handler: 
+        handler(lines, out)
+    else: 
+        _fallback_labels(lines, out)
+        _validate_and_repair(out)
+        
     out["source"] = "ocr" if used_ocr else "text"
     out["file"] = os.path.basename(pdf_path)
+    
     return out
