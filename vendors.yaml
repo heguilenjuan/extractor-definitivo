@@ -1,0 +1,13 @@
+PIRELLI:
+  detect:
+    names: ["PIRELLI NEUMÁTICOS", "PIRELLI NEUMATICOS"]
+    cuits:  ["33-50223253-9"]
+GUERRINI:
+  detect:
+    names: ["GUERRINI NEUMÁTICOS", "GUERRINI NEUMATICOS"]
+    cuits:  ["30-67701881-6"]
+# ACME (ejemplo):
+# ACME:
+#   detect:
+#     names: ["ACME S.A.", "ACME SA"]
+#     cuits:  ["30-12345678-9"]

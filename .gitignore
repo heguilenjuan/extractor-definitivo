@@ -1,0 +1,70 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.so
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# --- Virtualenv / Entornos ---
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+*.env
+*.venv
+
+# --- Logs / Debug ---
+*.log
+*.out
+*.err
+
+# --- IDEs / Configuración local ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Compilados / Build ---
+build/
+dist/
+*.bak
+*.tmp
+*.orig
+
+# --- Archivos de OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Dependencias locales ---
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+coverage/
+htmlcov/
+
+# --- Data y resultados temporales ---
+data/*.json
+!data/.gitkeep   # (mantener carpeta vacía si querés)
+
+# --- Archivos específicos de tu proyecto ---
+# PDFs temporales creados por uploads
+*.pdf
+tmp/
+
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+dist/
+node_modules/

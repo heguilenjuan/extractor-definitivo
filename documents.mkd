@@ -1,0 +1,96 @@
+1. server.py ( Recibe el archivo PDF via "/extract", lo guarda temporalmente y llama a "extract_from_pdf" )
+2. extractor_v6.py ( Es el nucleo: lee texto, detecta proveedor, ejecuta el handle correcto, valida totales )
+3. vendors.yaml ( Define como identificar proveedores (Por nombre o CUIT) )
+4. vendors_registry.py ( Contiene registro donde se asocian proveedores con funciones especificas )
+5. handlers_*.py ( Implementan las reglas particulares de cada proveedor )
+6. extractor_utils.py ( Funciones genericas que usan todos los handlers )
+7. Devuelve los datos como JSON
+
+                   ┌───────────────────────────┐
+                   │        Usuario/API        │
+                   │ (sube archivo .pdf        │
+                   │  y opcional vendor_hint)  │
+                   └────────────┬──────────────┘
+                                │
+                                ▼
+                    ┌──────────────────────┐
+                    │      server.py       │
+                    │ Endpoint /extract    │
+                    │ Guarda PDF temporal  │
+                    │ Llama a              │
+                    │ extract_from_pdf()   │
+                    └────────────┬─────────┘
+                                 │
+                                 ▼
+                  ┌───────────────────────────┐
+                  │     extractor_v6.py       │
+                  │   (cerebro principal)     │
+                  ├───────────────────────────┤
+                  │ 1. Lee texto del PDF      │
+                  │    → con PyMuPDF          │
+                  │    → o con OCR si vacío   │
+                  │                           │
+                  │ 2. Extrae datos comunes   │
+                  │    (tipo, número, fecha,  │
+                  │     CAE, CUITs, etc.)     │
+                  │                           │
+                  │ 3. Detecta proveedor:     │
+                  │    - vendor_hint          │
+                  │    - por nombre (vendors.yaml)
+                  │    - por CUIT             │
+                  │                           │
+                  │ 4. Busca handler          │
+                  │    REGISTRY[vendor]       │
+                  │    └→ llama a función     │
+                  │       del handler         │
+                  │                           │
+                  │ 5. Si no hay handler, usa │
+                  │    fallback genérico      │
+                  │                           │
+                  │ 6. Valida totales         │
+                  │ 7. Devuelve JSON final    │
+                  └────────────┬──────────────┘
+                               │
+               ┌───────────────┼─────────────────┐
+               ▼               ▼                 ▼
+   ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+   │ handlers_pirelli│ │handlers_guerrini│ │otros handlers │
+   │  (layout Pirelli)│ │ (layout Guerrini)│ │ futuros (ACME)│
+   └────────────────┘ └────────────────┘ └────────────────┘
+               │               │                 │
+               ▼               ▼                 ▼
+          (usa funciones comunes de extractor_utils)
+                               │
+                               ▼
+                 ┌──────────────────────────┐
+                 │     extractor_utils.py   │
+                 │ - Leer PDF u OCR         │
+                 │ - Limpiar texto/números  │
+                 │ - Detectar CUIT, CAE     │
+                 │ - Parsear importes       │
+                 └────────────┬─────────────┘
+                              │
+                              ▼
+                  ┌──────────────────────────┐
+                  │       vendors.yaml        │
+                  │ - nombres / CUITs por     │
+                  │   proveedor               │
+                  │ - sirve para detectar     │
+                  │   vendor automáticamente  │
+                  └──────────────────────────┘
+                              │
+                              ▼
+                 ┌──────────────────────────┐
+                 │  JSON de salida final     │
+                 │                          │
+                 │ {                        │
+                 │   "proveedor": ...,      │
+                 │   "cuit_proveedor": ..., │
+                 │   "tipo": "A",           │
+                 │   "numero": "0072-...",  │
+                 │   "subtotal": ...,       │
+                 │   "iva": ...,            │
+                 │   "total": ...,          │
+                 │   "debug": {...}         │
+                 │ }                        │
+                 └──────────────────────────┘
