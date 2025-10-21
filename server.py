@@ -21,10 +21,10 @@ class Vendor(str, Enum):
 async def health() -> dict:
     return {"status": "ok"}
 
-@app.post("/extract", response_model=None)  # 👈 evita que Pydantic infiera un modelo
+@app.post("/extract", response_model=None)  
 async def extract_invoice(
-    file: Annotated[UploadFile, File(...)],   # 👈 Annotated
-    vendor: Annotated[Vendor, Form(...)]      # 👈 Annotated + enum obligatorio
+    file: Annotated[UploadFile, File(...)],  
+    vendor: Annotated[Vendor, Form(...)]  
 ) -> dict:
     filename = (file.filename or "").lower()
     if not filename.endswith(".pdf"):

@@ -6,8 +6,109 @@ from extractor_utils import (
     read_pdf_text, ocr_pdf_to_lines, extract_header_common, extract_names_and_cuits,
     detect_vendor_basic, detect_vendor_by_cuit
 )
+
 import handlers_pirelli  # noqa: F401
 import handlers_guerrini  # noqa: F401
+import re
+
+
+# --- ESQUEMA DE SALIDA FIJO ---
+FIXED_TAX_FIELDS = [
+    # Percepciones
+    "percepcion_iva",
+    "percepcion_iibb_bs_as",
+    "percepcion_ganancias",
+    "percepcion_iibb_la_pampa",
+    "percepcion_iibb_rio_negro",
+    "percepcion_iibb_neuquen",
+    "percepcion_iibb_caba",
+    "percepcion_iibb_cordoba",
+    "percepcion_iibb_chubut",
+    "percepcion_iibb_mendoza",
+    "percepcion_iibb_santa_cruz",
+    "percepcion_iibb_santa_fe",
+    "percepcion_iibb_tucuman",
+    "percepcion_iibb_entre_rios",
+    "percepcion_iibb_la_rioja",
+    "impuesto_combustible",
+    "impuestos_y_sellados",
+    # Retenciones
+    "retencion_iva",
+    "retencion_iibb_pcia_bs_as",
+    "retencion_ganancias",
+    "retencion_iibb_pcia_rio_negro",
+    "retencion_iibb_pcia_neuquen",
+    "retencion_iibb_sirtac",
+]
+
+# Orden importa: la primera que matchea gana
+NORMALIZATION_RULES = [
+    # --- RETENCIONES (detectamos primero para que no caigan en percepciones) ---
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bIVA\b',                       "retencion_iva"),
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bGANANCIAS?\b',                "retencion_ganancias"),
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bIIBB\b.*\b(BUENOS\s*AIRES|ARBA|P\.?B\.?A)\b', "retencion_iibb_pcia_bs_as"),
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bIIBB\b.*\bR[ÍI]O\s*NEGRO\b',  "retencion_iibb_pcia_rio_negro"),
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bIIBB\b.*\bNEUQU[ÉE]N\b',      "retencion_iibb_pcia_neuquen"),
+    (r'\bRET(ENCI[ÓO]N|\.?)\b.*\bSIRTAC\b',                    "retencion_iibb_sirtac"),
+
+    # --- PERCEPCIONES IVA / AFIP ---
+    (r'\bPERCEP(CCI[ÓO]N|\.?)\b.*\bIVA\b',                     "percepcion_iva"),
+    (r'\bRG\s*3337\b|\bR\.?G\.?\s*3337\b|\bDGI\s*3337\b',      "percepcion_iva"),   
+    (r'\bRG\s*2126\b|\bR\.?G\.?\s*2126\b',                     "percepcion_iva"),
+
+    # --- PERCEPCIONES IIBB (provincias) ---
+    (r'\bIIBB\b.*\b(BUENOS\s*AIRES|ARBA|P\.?B\.?A)\b',         "percepcion_iibb_bs_as"),
+    (r'\bIIBB\b.*\bCABA\b|\bAGIP\b',                           "percepcion_iibb_caba"),
+    (r'\bIIBB\b.*\bNEUQU[ÉE]N\b|\bIB\s*(CONV\.?|CONVENIO)\s*NEUQ', "percepcion_iibb_neuquen"), 
+    (r'\bIIBB\b.*\bR[ÍI]O\s*NEGRO\b|\bRIO\s*NEG\b|\bIB\s*(CONV\.?|CONVENIO)\s*R[ÍI]O\s*NEG', "percepcion_iibb_rio_negro"), 
+    (r'\bIIBB\b.*\bLA\s*PAMPA\b',                              "percepcion_iibb_la_pampa"),
+    (r'\bIIBB\b.*\bC[ÓO]RDOBA\b',                              "percepcion_iibb_cordoba"),
+    (r'\bIIBB\b.*\bCHUBUT\b',                                  "percepcion_iibb_chubut"),
+    (r'\bIIBB\b.*\bMENDOZA\b',                                 "percepcion_iibb_mendoza"),
+    (r'\bIIBB\b.*\bSANTA\s*CRUZ\b',                            "percepcion_iibb_santa_cruz"),
+    (r'\bIIBB\b.*\bSANTA\s*FE\b',                              "percepcion_iibb_santa_fe"),
+    (r'\bIIBB\b.*\bTUCUM[ÁA]N\b',                              "percepcion_iibb_tucuman"),
+    (r'\bIIBB\b.*\bENTRE\s*R[IÍ]OS\b',                         "percepcion_iibb_entre_rios"),
+    (r'\bIIBB\b.*\bLA\s*RIOJA\b',                              "percepcion_iibb_la_rioja"),
+
+    # --- BA: DN B70/07 también es Bs.As. ---
+    (r'\bDN\s*B70(?:\/0?7)?\b|\bIB\s*BA\b',                    "percepcion_iibb_bs_as"),
+    
+    # --- GANANCIAS (percepciones) ---
+    (r'\bPERCEP(CCI[ÓO]N|\.?)\b.*\bGANANCIAS?\b',              "percepcion_ganancias"),
+
+    # --- OTROS ---
+    (r'IMPUESTO\s+AL\s+COMBUSTIBLE|ITC\b',                     "impuesto_combustible"),
+    (r'\bSELLOS\b|\bIMPUESTOS?\s+VARIOS\b|\bIMPUESTOS?\b',     "impuestos_y_sellados"),
+ 
+]
+
+def _normalize_fixed_schema(out: Dict[str, Any]) -> None:
+    """
+    Rellena SIEMPRE las claves fijas (FIXED_TAX_FIELDS) con None o con el total
+    sumado por cada clave normalizada, usando percepciones_detalle/percepciones_total.
+    """
+    fixed = {k: None for k in FIXED_TAX_FIELDS}
+
+    items = list(out.get("percepciones_detalle") or [])
+    total_perc = out.get("percepciones_total")
+    if (not items) and (total_perc is not None):
+        items = [{"desc": "PERCEP. IIBB", "monto": total_perc}]
+
+    for it in items:
+        desc_raw = (it.get("desc") or "").upper()
+        monto = float(it.get("monto") or 0.0)
+        matched_key = None
+        for pattern, key in NORMALIZATION_RULES:
+            if re.search(pattern, desc_raw, flags=re.I):
+                matched_key = key
+                break
+        if matched_key:
+            fixed[matched_key] = round((fixed[matched_key] or 0.0) + monto, 2)
+
+    # lo agregamos como bloque aparte; no toca tus campos existentes
+    out["tributos_normalizados"] = fixed
+
 def _load_vendor_config(cfg_path: str) -> Dict[str, Any]:
     if not os.path.exists(cfg_path):
         return {"detect": {"names": {}, "cuits": {}}}
@@ -64,11 +165,13 @@ def _validate_and_repair(out: Dict[str, Any], tol: float = 0.05) -> None:
     tot = out.get("total")
     comp = round(sub + iva + perc, 2)
     out.setdefault("warnings", [])
+    
     if tot is None:
         out["total"] = comp
         out["warnings"].append("TOTAL estimado = SUBTOTAL + IVA + PERCEPCIONES")
     elif abs((tot or 0.0) - comp) > tol:
         out["warnings"].append(f"Diferencia contable: total({tot}) != subtotal+iva+percepciones({comp})")
+        
 def extract_from_pdf(pdf_path: str, vendor_hint: Optional[str] = None, cfg_path: str = "vendors.yaml") -> Dict[str, Any]:
     
     lines = read_pdf_text(pdf_path)
@@ -115,7 +218,9 @@ def extract_from_pdf(pdf_path: str, vendor_hint: Optional[str] = None, cfg_path:
         handler(lines, out)
     else: 
         _fallback_labels(lines, out)
-        _validate_and_repair(out)
+        
+    _normalize_fixed_schema(out)
+    _validate_and_repair(out)
         
     out["source"] = "ocr" if used_ocr else "text"
     out["file"] = os.path.basename(pdf_path)
