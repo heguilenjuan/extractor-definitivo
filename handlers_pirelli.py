@@ -1,5 +1,4 @@
 # handlers_pirelli.py
-# 
 import re
 from typing import List, Dict, Any, Optional
 from vendors_registry import register

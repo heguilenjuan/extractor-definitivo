@@ -54,6 +54,7 @@ def _to_kv(minimal: Dict[str, Any]) -> str:
     lines.append(f"numero={minimal.get('numero','')}")
     lines.append(f"fecha={minimal.get('fecha','')}")
     lines.append(f"cuit={minimal.get('cuit','')}")
+    lines.append(f"subtotal={_num(minimal.get('subtotal', 0))}")
     lines.append(f"total={_num(minimal.get('total', 0))}")
 
     # IVA por alícuota

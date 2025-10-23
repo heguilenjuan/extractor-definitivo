@@ -248,29 +248,42 @@ def _split_perc_ret(tributos: Dict[str, Optional[float]]) -> Tuple[Dict[str, flo
             retenciones[k] = float(v)
     return percepciones, retenciones
 
+
 def _build_minimal_payload(full: Dict[str, Any], prefer_cuit: str = "proveedor") -> Dict[str, Any]:
     """
-    Devuelve SOLO: numero, fecha (ISO si posible), cuit (proveedor por defecto),
-    total, iva{...}, percepciones{...}, retenciones{...}
+    Devuelve: numero, fecha, cuit, subtotal, total, iva{...}, percepciones{...}, retenciones{...}.
+    Si falta subtotal en 'full', lo estima como: total - sum(iva) - sum(percepciones).
     """
     numero = full.get("numero")
     fecha = _to_iso_date(full.get("fecha"))
     cuit = (full.get("cuit_proveedor") if prefer_cuit == "proveedor" else full.get("cuit_cliente")) or ""
     total = float(full.get("total") or 0.0)
 
+    # IVA por alícuota + suma
     iva_por_tasa = _sum_iva_by_rate(full.get("iva_detalle"), full.get("iva"))
+    iva_total = round(sum(iva_por_tasa.values()), 2) if iva_por_tasa else float(full.get("iva") or 0.0)
+
+    # Percepciones / retenciones normalizadas
     trib_norm = _normalize_fixed_schema(full)
     percepciones, retenciones = _split_perc_ret(trib_norm)
+    perc_total = round(sum(percepciones.values()), 2) if percepciones else 0.0
 
-    # Construyo salida limpia, sin None, sin campos vacíos irrelevantes
+    # Subtotal directo o estimado
+    subtotal = full.get("subtotal")
+    if subtotal is None:
+        subtotal = round(total - iva_total - perc_total, 2) if total else 0.0
+        if abs(subtotal) < 1e-6:
+            subtotal = 0.0
+
     out: Dict[str, Any] = {
         "numero": numero or "",
         "fecha": fecha or "",
         "cuit": cuit or "",
+        "subtotal": round(float(subtotal or 0.0), 2),
         "total": round(total, 2),
-        "iva": iva_por_tasa,                 # p.ej. {"21": 117194.54, "10.5": 0} -> solo presentes
-        "percepciones": percepciones,        # claves: percepcion_iva, percepcion_iibb_bs_as, ...
-        "retenciones": retenciones           # claves: retencion_iva, retencion_iibb_pcia_bs_as, ...
+        "iva": iva_por_tasa,
+        "percepciones": percepciones,
+        "retenciones": retenciones
     }
     return out
 
